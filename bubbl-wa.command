@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 
 cd "$HOME/Desktop/bubbl-whatsapp" || { echo "Project folder not found"; exit 1; }
 
