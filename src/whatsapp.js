@@ -14,6 +14,7 @@ import { redisCache } from './redis.js';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
+import qrcode from 'qrcode-terminal';
 
 class WhatsAppClient extends EventEmitter {
   constructor() {
@@ -44,7 +45,7 @@ class WhatsAppClient extends EventEmitter {
           creds: state.creds,
           keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
-        printQRInTerminal: true,
+        // Removed deprecated printQRInTerminal - we handle QR manually
         browser: config.browserType === 'Desktop' 
           ? Browsers.macOS('Desktop')
           : Browsers.appropriate('Chrome'),
@@ -80,6 +81,10 @@ class WhatsAppClient extends EventEmitter {
         this.qrCode = qr;
         this.emit('qr', qr);
         logger.info('QR code generated - scan to connect');
+        // Display QR code in terminal
+        console.log('\n📱 Scan this QR code with WhatsApp:\n');
+        qrcode.generate(qr, { small: true });
+        console.log('\n');
       }
 
       if (connection === 'close') {
