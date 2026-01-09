@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Auth state (contains sensitive session data)
+auth/
+auth_state/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+
+# Test coverage
+coverage/
