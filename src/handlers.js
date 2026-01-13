@@ -132,12 +132,15 @@ class MessageHandler {
   }
 
   /**
-   * Format WhatsApp JID to phone number
+   * Format WhatsApp JID to phone number with country code
+   * Ensures phone numbers have + prefix for consistency with Firestore
    */
   _formatPhoneNumber(jid) {
     if (!jid) return null;
-    // Remove @s.whatsapp.net or @g.us suffix
-    return jid.split('@')[0].replace(/[^0-9+]/g, '');
+    // Remove @s.whatsapp.net or @g.us suffix and extract digits
+    const digits = jid.split('@')[0].replace(/[^0-9]/g, '');
+    // Always add + prefix for consistent storage/lookup
+    return digits ? `+${digits}` : null;
   }
 
   /**
@@ -173,8 +176,15 @@ export const messageHandler = new MessageHandler();
  * This function is called from the HTTP API
  */
 export async function sendMessage(chatId, message, options = {}) {
-  // Format JID if needed
-  const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+  // Format JID if needed - strip + prefix if present for WhatsApp JID format
+  let jid;
+  if (chatId.includes('@')) {
+    jid = chatId;
+  } else {
+    // Remove + prefix if present, WhatsApp JIDs use raw digits
+    const digits = chatId.replace(/^\+/, '').replace(/[^0-9]/g, '');
+    jid = `${digits}@s.whatsapp.net`;
+  }
   
   logger.info({ jid, messagePreview: message.substring(0, 50) }, 'Sending message');
   
@@ -185,7 +195,15 @@ export async function sendMessage(chatId, message, options = {}) {
  * Send message to a WhatsApp group
  */
 export async function sendGroupMessage(groupId, message, options = {}) {
-  const jid = groupId.includes('@') ? groupId : `${groupId}@g.us`;
+  // Format JID if needed - handle various group ID formats
+  let jid;
+  if (groupId.includes('@')) {
+    jid = groupId;
+  } else {
+    // Remove any non-numeric characters except - for group IDs
+    const cleanId = groupId.replace(/[^0-9\-]/g, '');
+    jid = `${cleanId}@g.us`;
+  }
   
   logger.info({ jid, messagePreview: message.substring(0, 50) }, 'Sending group message');
   
@@ -196,7 +214,14 @@ export async function sendGroupMessage(groupId, message, options = {}) {
  * Get chat history for a specific chat
  */
 export async function getChatHistory(chatId, limit = 50) {
-  const jid = chatId.includes('@') ? chatId : `${chatId}@s.whatsapp.net`;
+  // Handle + prefix in phone numbers
+  let jid;
+  if (chatId.includes('@')) {
+    jid = chatId;
+  } else {
+    const digits = chatId.replace(/^\+/, '').replace(/[^0-9]/g, '');
+    jid = `${digits}@s.whatsapp.net`;
+  }
   return await whatsappClient.fetchMessageHistory(jid, limit);
 }
 
@@ -204,7 +229,13 @@ export async function getChatHistory(chatId, limit = 50) {
  * Get group metadata
  */
 export async function getGroupInfo(groupId) {
-  const jid = groupId.includes('@') ? groupId : `${groupId}@g.us`;
+  let jid;
+  if (groupId.includes('@')) {
+    jid = groupId;
+  } else {
+    const cleanId = groupId.replace(/[^0-9\-]/g, '');
+    jid = `${cleanId}@g.us`;
+  }
   return await whatsappClient.getGroupMetadata(jid);
 }
 
