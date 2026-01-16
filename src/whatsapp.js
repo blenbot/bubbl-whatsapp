@@ -217,12 +217,37 @@ class WhatsAppClient extends EventEmitter {
     // Skip status broadcasts
     if (msg.key.remoteJid === 'status@broadcast') return;
 
-    const chatId = msg.key.remoteJid;
+    let chatId = msg.key.remoteJid;
     const isGroup = chatId.endsWith('@g.us');
     const isFromMe = msg.key.fromMe;
-    const sender = isGroup 
-      ? msg.key.participant || msg.participant 
-      : chatId;
+
+    // FIX: Handle LID (Linked Device ID) to real phone number conversion
+    // WhatsApp sometimes returns @lid instead of @s.whatsapp.net
+    // The real phone number is available in senderPn or participantPn
+    
+    // For DMs: if remoteJid is @lid, use senderPn for the real number
+    if (/@lid/.test(chatId) && msg.key.senderPn) {
+      logger.info({ 
+        originalChatId: chatId, 
+        senderPn: msg.key.senderPn 
+      }, 'Converting LID to real phone number (DM)');
+      chatId = msg.key.senderPn;
+    }
+
+    let sender;
+    if (isGroup) {
+      // For groups: participant can be @lid, use participantPn for real number
+      sender = msg.key.participant || msg.participant;
+      if (/@lid/.test(sender) && msg.key.participantPn) {
+        logger.info({ 
+          originalSender: sender, 
+          participantPn: msg.key.participantPn 
+        }, 'Converting LID to real phone number (group participant)');
+        sender = msg.key.participantPn;
+      }
+    } else {
+      sender = chatId;
+    }
 
     // Extract message content
     const messageContent = this._extractMessageContent(msg);
@@ -364,12 +389,29 @@ class WhatsAppClient extends EventEmitter {
     const content = this._extractMessageContent(msg);
     const isGroup = msg.key.remoteJid?.endsWith('@g.us');
     
+    // Resolve LID to real phone number in formatted message
+    let chatId = msg.key.remoteJid;
+    let sender;
+    
+    // Handle LID conversion for chatId (DMs)
+    if (/@lid/.test(chatId) && msg.key.senderPn) {
+      chatId = msg.key.senderPn;
+    }
+    
+    if (isGroup) {
+      sender = msg.key.participant || msg.participant;
+      // Handle LID conversion for group participants
+      if (/@lid/.test(sender) && msg.key.participantPn) {
+        sender = msg.key.participantPn;
+      }
+    } else {
+      sender = chatId;
+    }
+    
     return {
       id: msg.key.id,
-      chatId: msg.key.remoteJid,
-      sender: isGroup 
-        ? (msg.key.participant || msg.participant)
-        : msg.key.remoteJid,
+      chatId: chatId,
+      sender: sender,
       isFromMe: msg.key.fromMe,
       timestamp: msg.messageTimestamp 
         ? (typeof msg.messageTimestamp === 'number' 

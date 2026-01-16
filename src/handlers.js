@@ -13,6 +13,27 @@ class MessageHandler {
   }
 
   /**
+   * Resolve LID (Linked Device ID) to real JID using group participants
+   * This is a fallback when participantPn is not available
+   * @param {string} lid - The LID to resolve (e.g., "123456789@lid")
+   * @param {object} groupMetadata - Group metadata containing participants
+   * @returns {string|null} - The real JID or null if not found
+   */
+  _resolveLidFromParticipants(lid, groupMetadata) {
+    if (!lid || !groupMetadata?.participants) return null;
+    
+    // Participants may have both 'id' (can be @lid) and 'jid' (real number)
+    // or the mapping might be stored differently
+    const participant = groupMetadata.participants.find(p => p.id === lid);
+    if (participant?.jid) {
+      return participant.jid;
+    }
+    
+    // If no direct mapping found, return null
+    return null;
+  }
+
+  /**
    * Initialize message handlers
    */
   initialize() {
@@ -39,7 +60,7 @@ class MessageHandler {
    * Handle incoming WhatsApp message
    */
   async handleIncomingMessage(data) {
-    const {
+    let {
       chatId,
       sender,
       isGroup,
@@ -59,6 +80,19 @@ class MessageHandler {
     if (messageContent.type !== 'text') {
       logger.debug({ chatId, type: messageContent.type }, 'Skipping non-text message');
       return;
+    }
+
+    // Additional LID fallback resolution using group participants
+    // This handles cases where whatsapp.js couldn't resolve the LID
+    if (isGroup && /@lid/.test(sender) && groupMetadata) {
+      const resolvedJid = this._resolveLidFromParticipants(sender, groupMetadata);
+      if (resolvedJid) {
+        logger.info({ 
+          originalSender: sender, 
+          resolvedJid 
+        }, 'Resolved LID from group participants');
+        sender = resolvedJid;
+      }
     }
 
     const text = messageContent.text;
@@ -134,9 +168,21 @@ class MessageHandler {
   /**
    * Format WhatsApp JID to phone number with country code
    * Ensures phone numbers have + prefix for consistency with Firestore
+   * Handles LID (Linked Device ID) format which cannot be converted
    */
   _formatPhoneNumber(jid) {
     if (!jid) return null;
+    
+    // Check if this is an LID (Linked Device ID) - these are temporary internal IDs
+    // and cannot be converted to phone numbers. Log a warning.
+    if (/@lid/.test(jid)) {
+      logger.warn({ jid }, 'Received LID instead of real phone number - this should have been converted');
+      // Try to extract any digits, but this is likely to be unusable
+      const lidDigits = jid.split('@')[0].replace(/[^0-9]/g, '');
+      // LIDs typically don't follow phone number patterns, so return null to avoid bad data
+      return null;
+    }
+    
     // Remove @s.whatsapp.net or @g.us suffix and extract digits
     const digits = jid.split('@')[0].replace(/[^0-9]/g, '');
     // Always add + prefix for consistent storage/lookup
