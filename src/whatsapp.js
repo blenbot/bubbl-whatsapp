@@ -6,6 +6,7 @@ import makeWASocket, {
   Browsers,
   proto,
   getAggregateVotesInPollMessage,
+  jidDecode,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { config } from './config.js';
@@ -221,29 +222,52 @@ class WhatsAppClient extends EventEmitter {
     const isGroup = chatId.endsWith('@g.us');
     const isFromMe = msg.key.fromMe;
 
+    // Debug: Log the message key structure to understand available fields
+    logger.debug({
+      remoteJid: msg.key.remoteJid,
+      participant: msg.key.participant,
+      remoteJidAlt: msg.key.remoteJidAlt,
+      participantAlt: msg.key.participantAlt,
+      addressingMode: msg.key.addressingMode,
+      fromMe: msg.key.fromMe,
+    }, 'Message key structure for LID debugging');
+
     // FIX: Handle LID (Linked Device ID) to real phone number conversion
-    // WhatsApp sometimes returns @lid instead of @s.whatsapp.net
-    // The real phone number is available in senderPn or participantPn
+    // WhatsApp uses LID (Linked Device IDs) for privacy. We need to convert to real phone numbers.
+    // The mapping can come from:
+    // 1. msg.key properties like participantAlt or remoteJidAlt (set by Baileys after decryption)
+    // 2. The socket's internal LID mapping store
     
-    // For DMs: if remoteJid is @lid, use senderPn for the real number
-    if (/@lid/.test(chatId) && msg.key.senderPn) {
-      logger.info({ 
-        originalChatId: chatId, 
-        senderPn: msg.key.senderPn 
-      }, 'Converting LID to real phone number (DM)');
-      chatId = msg.key.senderPn;
+    // For DMs: if remoteJid is @lid, try to get the real phone number
+    if (/@lid/.test(chatId)) {
+      // Try multiple sources for the real phone number
+      const resolvedPn = msg.key.remoteJidAlt || await this._resolveLidToPhone(chatId);
+      if (resolvedPn) {
+        logger.info({ 
+          originalChatId: chatId, 
+          resolvedPn
+        }, 'Converting LID to real phone number (DM)');
+        chatId = resolvedPn;
+      } else {
+        logger.warn({ chatId }, 'Could not resolve LID to phone number for DM, using LID as-is');
+      }
     }
 
     let sender;
     if (isGroup) {
-      // For groups: participant can be @lid, use participantPn for real number
+      // For groups: participant can be @lid, try to get real number
       sender = msg.key.participant || msg.participant;
-      if (/@lid/.test(sender) && msg.key.participantPn) {
-        logger.info({ 
-          originalSender: sender, 
-          participantPn: msg.key.participantPn 
-        }, 'Converting LID to real phone number (group participant)');
-        sender = msg.key.participantPn;
+      if (/@lid/.test(sender)) {
+        const resolvedPn = msg.key.participantAlt || await this._resolveLidToPhone(sender);
+        if (resolvedPn) {
+          logger.info({ 
+            originalSender: sender, 
+            resolvedPn
+          }, 'Converting LID to real phone number (group participant)');
+          sender = resolvedPn;
+        } else {
+          logger.warn({ sender }, 'Could not resolve LID to phone number for group participant');
+        }
       }
     } else {
       sender = chatId;
@@ -385,6 +409,49 @@ class WhatsAppClient extends EventEmitter {
     return null;
   }
 
+  /**
+   * Resolve LID to phone number using the socket's internal mapping
+   * @param {string} lid - The LID to resolve (e.g., "123456789@lid")
+   * @returns {Promise<string|null>} - The phone number JID or null if not found
+   */
+  async _resolveLidToPhone(lid) {
+    try {
+      if (!lid || !/@lid/.test(lid)) return null;
+      
+      logger.debug({ lid, hasSignalRepo: !!this.sock?.signalRepository }, 'Attempting to resolve LID to phone number');
+      
+      // Try to get the phone number from the socket's internal LID mapping
+      // The signalRepository has a lidMapping store that maintains LID <-> PN mappings
+      if (this.sock?.signalRepository?.lidMapping) {
+        try {
+          const pn = await this.sock.signalRepository.lidMapping.getPNForLID(lid);
+          if (pn) {
+            logger.info({ lid, pn }, 'Resolved LID via signalRepository.lidMapping');
+            return pn;
+          }
+          logger.debug({ lid }, 'No mapping found in signalRepository.lidMapping');
+        } catch (err) {
+          logger.debug({ err, lid }, 'Error accessing lidMapping');
+        }
+      }
+      
+      // If we have our own LID and PN stored in creds, and this is our LID, return our PN
+      if (this.sock?.authState?.creds?.me) {
+        const { id: myPn, lid: myLid } = this.sock.authState.creds.me;
+        if (myLid && lid === myLid) {
+          logger.debug({ lid, myPn }, 'Resolved own LID to PN');
+          return myPn;
+        }
+      }
+      
+      logger.debug({ lid }, 'Could not resolve LID to phone number via any method');
+      return null;
+    } catch (error) {
+      logger.error({ error, lid }, 'Error resolving LID to phone number');
+      return null;
+    }
+  }
+
   _formatMessage(msg) {
     const content = this._extractMessageContent(msg);
     const isGroup = msg.key.remoteJid?.endsWith('@g.us');
@@ -393,16 +460,16 @@ class WhatsAppClient extends EventEmitter {
     let chatId = msg.key.remoteJid;
     let sender;
     
-    // Handle LID conversion for chatId (DMs)
-    if (/@lid/.test(chatId) && msg.key.senderPn) {
-      chatId = msg.key.senderPn;
+    // Handle LID conversion for chatId (DMs) - use available alternatives
+    if (/@lid/.test(chatId)) {
+      chatId = msg.key.remoteJidAlt || chatId;
     }
     
     if (isGroup) {
       sender = msg.key.participant || msg.participant;
       // Handle LID conversion for group participants
-      if (/@lid/.test(sender) && msg.key.participantPn) {
-        sender = msg.key.participantPn;
+      if (/@lid/.test(sender)) {
+        sender = msg.key.participantAlt || sender;
       }
     } else {
       sender = chatId;

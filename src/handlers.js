@@ -168,19 +168,22 @@ class MessageHandler {
   /**
    * Format WhatsApp JID to phone number with country code
    * Ensures phone numbers have + prefix for consistency with Firestore
-   * Handles LID (Linked Device ID) format which cannot be converted
+   * Handles LID (Linked Device ID) format which cannot be directly converted
    */
   _formatPhoneNumber(jid) {
     if (!jid) return null;
     
-    // Check if this is an LID (Linked Device ID) - these are temporary internal IDs
-    // and cannot be converted to phone numbers. Log a warning.
+    // Check if this is an LID (Linked Device ID)
+    // LIDs are internal WhatsApp identifiers that may not have been resolved to phone numbers
     if (/@lid/.test(jid)) {
-      logger.warn({ jid }, 'Received LID instead of real phone number - this should have been converted');
-      // Try to extract any digits, but this is likely to be unusable
-      const lidDigits = jid.split('@')[0].replace(/[^0-9]/g, '');
-      // LIDs typically don't follow phone number patterns, so return null to avoid bad data
-      return null;
+      // Log at debug level since this can happen during the resolution process
+      logger.debug({ jid }, 'Received LID - will use LID identifier for now');
+      // Extract the LID user portion (without device number) for identification
+      // Format: "123456789:0@lid" -> we want "123456789"
+      const lidUser = jid.split('@')[0].split(':')[0];
+      // Return with a special prefix to indicate this is an LID-based identifier
+      // The backend should handle this appropriately
+      return lidUser ? `lid:${lidUser}` : null;
     }
     
     // Remove @s.whatsapp.net or @g.us suffix and extract digits
