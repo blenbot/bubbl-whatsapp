@@ -659,6 +659,11 @@ class WhatsAppClient extends EventEmitter {
     };
   }
 
+  async getInvitecode(){
+    const code = await this.sock.groupInviteCode("120363404733873998@g.us")
+    console.log(code)
+  }
+
   async logout() {
     if (this.sock) {
       await this.sock.logout();
