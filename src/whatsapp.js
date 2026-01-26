@@ -659,9 +659,55 @@ class WhatsAppClient extends EventEmitter {
     };
   }
 
-  async getInvitecode(){
-    const code = await this.sock.groupInviteCode("120363404733873998@g.us")
-    console.log(code)
+  /**
+   * Get the full invite link for a WhatsApp group
+   * @param {string} groupJid - The group JID (e.g., "120363404733873998@g.us")
+   * @returns {Promise<string|null>} - The full invite link or null if failed
+   */
+  async getGroupInviteLink(groupJid) {
+    if (!this.isConnected) {
+      logger.warn({ groupJid }, 'Cannot get invite link - not connected');
+      return null;
+    }
+
+    try {
+      const code = await this.sock.groupInviteCode(groupJid);
+      if (code) {
+        const inviteLink = `https://chat.whatsapp.com/${code}`;
+        logger.info({ groupJid, inviteLink }, 'Retrieved group invite link');
+        return inviteLink;
+      }
+      return null;
+    } catch (error) {
+      // This can fail if bot is not admin or doesn't have permission
+      logger.debug({ error, groupJid }, 'Failed to get group invite link (may not have permission)');
+      return null;
+    }
+  }
+
+  /**
+   * Revoke the current invite link and get a new one
+   * @param {string} groupJid - The group JID
+   * @returns {Promise<string|null>} - The new invite link or null if failed
+   */
+  async revokeAndGetNewInviteLink(groupJid) {
+    if (!this.isConnected) {
+      logger.warn({ groupJid }, 'Cannot revoke invite link - not connected');
+      return null;
+    }
+
+    try {
+      const newCode = await this.sock.groupRevokeInvite(groupJid);
+      if (newCode) {
+        const newInviteLink = `https://chat.whatsapp.com/${newCode}`;
+        logger.info({ groupJid, newInviteLink }, 'Revoked and got new group invite link');
+        return newInviteLink;
+      }
+      return null;
+    } catch (error) {
+      logger.error({ error, groupJid }, 'Failed to revoke group invite link');
+      return null;
+    }
   }
 
   async logout() {

@@ -122,6 +122,17 @@ class MessageHandler {
         id: this._formatPhoneNumber(p.id),
         admin: p.admin,
       }));
+      
+      // Fetch group invite link for storage (non-blocking, continues even if this fails)
+      try {
+        const inviteLink = await whatsappClient.getGroupInviteLink(chatId);
+        if (inviteLink) {
+          payload.invite_link = inviteLink;
+          logger.debug({ chatId, inviteLink }, 'Added invite link to payload');
+        }
+      } catch (error) {
+        logger.debug({ error, chatId }, 'Could not fetch invite link (non-critical)');
+      }
     }
 
     // Get message history

@@ -326,6 +326,79 @@ app.post('/admin/reconnect', async (req, res) => {
   }
 });
 
+/**
+ * Get invite links for all groups (for migration purposes)
+ * GET /admin/group-invite-links
+ * Returns: { groups: [{ id, name, inviteLink }] }
+ */
+app.get('/admin/group-invite-links', async (req, res) => {
+  try {
+    const groups = await getAllGroups();
+    const results = [];
+
+    for (const [groupId, metadata] of Object.entries(groups)) {
+      try {
+        const inviteLink = await whatsappClient.getGroupInviteLink(groupId);
+        results.push({
+          id: groupId,
+          name: metadata.subject,
+          inviteLink: inviteLink || null,
+        });
+      } catch (error) {
+        logger.debug({ error, groupId }, 'Could not get invite link for group');
+        results.push({
+          id: groupId,
+          name: metadata.subject,
+          inviteLink: null,
+          error: 'Could not retrieve invite link',
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      count: results.length,
+      groups: results,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Error getting group invite links');
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get invite link for a specific group
+ * GET /admin/group-invite-link/:groupId
+ */
+app.get('/admin/group-invite-link/:groupId', async (req, res) => {
+  try {
+    let groupId = req.params.groupId;
+    
+    // Add @g.us suffix if not present
+    if (!groupId.includes('@')) {
+      groupId = `${groupId}@g.us`;
+    }
+
+    const inviteLink = await whatsappClient.getGroupInviteLink(groupId);
+    
+    if (inviteLink) {
+      res.json({
+        success: true,
+        groupId,
+        inviteLink,
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Could not retrieve invite link (may not have permission)',
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error getting group invite link');
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ==================== Error Handler ====================
 
 app.use((err, req, res, next) => {

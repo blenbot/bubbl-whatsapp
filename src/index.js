@@ -27,9 +27,6 @@ async function main() {
       logger.info(`   API docs: http://localhost:${config.port}/api`);
     });
 
-    //experimental
-    await whatsappClient.getInvitecode();
-
     // Graceful shutdown
     const shutdown = async (signal) => {
       logger.info({ signal }, 'Shutdown signal received');
