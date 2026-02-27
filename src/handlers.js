@@ -109,6 +109,7 @@ class MessageHandler {
       platform: 'whatsapp',
       chat_id: chatId,
       sender: this._formatPhoneNumber(sender),
+      sender_jid: sender,  // Raw Baileys JID (e.g. "917947362894@s.whatsapp.net")
       text: text,
       is_group: isGroup,
       timestamp: formattedMessage.timestamp,
